@@ -34,6 +34,68 @@ export interface DeployResponse {
   previewUrl: string;
 }
 
+// API response format for files endpoint
+interface FilesApiResponse {
+  files: { path: string }[];
+}
+
+// Convert flat file paths to nested tree structure
+function buildFileTree(paths: { path: string }[]): FileNode[] {
+  const root: FileNode[] = [];
+  const nodeMap = new Map<string, FileNode>();
+
+  // Sort paths to ensure directories come before their children
+  const sortedPaths = [...paths].sort((a, b) => a.path.localeCompare(b.path));
+
+  for (const { path } of sortedPaths) {
+    const parts = path.split("/");
+    let currentPath = "";
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const parentPath = currentPath;
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+      // Skip if node already exists
+      if (nodeMap.has(currentPath)) continue;
+
+      const isFile = i === parts.length - 1;
+      const node: FileNode = {
+        name: part,
+        path: currentPath,
+        type: isFile ? "file" : "directory",
+        children: isFile ? undefined : [],
+      };
+
+      nodeMap.set(currentPath, node);
+
+      if (parentPath) {
+        const parent = nodeMap.get(parentPath);
+        if (parent && parent.children) {
+          parent.children.push(node);
+        }
+      } else {
+        root.push(node);
+      }
+    }
+  }
+
+  // Sort each level: directories first, then alphabetically
+  const sortNodes = (nodes: FileNode[]) => {
+    nodes.sort((a, b) => {
+      if (a.type === "directory" && b.type === "file") return -1;
+      if (a.type === "file" && b.type === "directory") return 1;
+      return a.name.localeCompare(b.name);
+    });
+    nodes.forEach((node) => {
+      if (node.children) sortNodes(node.children);
+    });
+  };
+
+  sortNodes(root);
+  return root;
+}
+
 export const api = {
   async login(credentials: LoginCredentials): Promise<LoginResponse> {
     const response = await fetch(`${BASE_URL}/api/auth/login`, {
@@ -59,7 +121,8 @@ export const api = {
       throw new Error("Failed to fetch files");
     }
     
-    return response.json();
+    const data: FilesApiResponse = await response.json();
+    return buildFileTree(data.files);
   },
 
   async getFileContent(projectId: string, path: string): Promise<string> {

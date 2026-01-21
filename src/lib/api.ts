@@ -310,5 +310,5 @@ export const api = {
       if (error.name !== "AbortError") onError(error);
     }
     return () => controller.abort();
-}
+  }
 };

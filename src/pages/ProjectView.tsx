@@ -152,7 +152,7 @@ export function ProjectView() {
           <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
             <Sparkles className="w-3.5 h-3.5 text-primary" />
           </div>
-          <span className="font-semibold text-sm">Project Companion</span>
+          <span className="font-semibold text-sm">Project {projectId}</span>
           <span className="text-muted-foreground text-xs">Previewing last saved version</span>
         </div>
 

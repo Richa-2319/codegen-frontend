@@ -3,6 +3,8 @@ import { Send, Loader2, User, Bot, Plus, Bookmark, MoreHorizontal, ThumbsUp, Thu
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export interface ChatMessage {
   id: string;
@@ -83,7 +85,7 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
             {messages.map((message, index) => (
               <div key={message.id}>
                 {/* Message card container */}
-                <div className={`p-4 ${message.role === "user" ? "bg-panel" : "bg-background"}`}>
+                <div className={`p-4 bg-background`}>
                   {/* User message styling */}
                   {message.role === "user" ? (
                     <div className="space-y-2">
@@ -93,11 +95,24 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
                           {format(new Date(message.createdAt), "d MMM 'at' HH:mm")}
                         </div>
                       )}
-                      <div className="bg-muted/50 rounded-lg p-3">
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                      <div className="bg-muted/50 rounded-lg p-3 max-w-[80%] ml-auto flex justify-between items-start gap-2">
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words align-right">
                           {message.content}
                         </p>
                       </div>
+                    </div>
+                  ) : (
+                    /* Assistant message styling */
+                    <div className="space-y-3">
+                      {/* Message content */}
+                      {message.content && (
+                        <div className="text-sm leading-relaxed break-words text-muted-foreground prose prose-invert prose-sm max-w-none">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {message.content}
+                          </ReactMarkdown>
+                          {message.isStreaming && <span className="streaming-cursor inline-block w-1.5 h-4 ml-1 bg-primary animate-pulse" />}
+                        </div>
+                      )}
                       {/* Action buttons for user message */}
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
@@ -116,37 +131,6 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
                           <MoreHorizontal className="w-3.5 h-3.5" />
                         </Button>
                       </div>
-                    </div>
-                  ) : (
-                    /* Assistant message styling */
-                    <div className="space-y-3">
-                      {/* Version indicator card */}
-                      {message.content && (
-                        <div className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-panel/50">
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium">Implement Lovable UI scaffolding</span>
-                              <div className="flex items-center gap-1">
-                                <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground">
-                                  <Bookmark className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            </div>
-                            <span className="text-xs text-muted-foreground">Preview this version</span>
-                          </div>
-                          <Button variant="outline" size="sm" className="h-7 text-xs">
-                            <span className="mr-1">&lt;/&gt;</span> Code
-                          </Button>
-                        </div>
-                      )}
-                      
-                      {/* Message content */}
-                      {message.content && (
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap break-words text-muted-foreground">
-                          {message.content}
-                          {message.isStreaming && <span className="streaming-cursor" />}
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>

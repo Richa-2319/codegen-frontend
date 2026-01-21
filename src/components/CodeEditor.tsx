@@ -2,8 +2,8 @@ import CodeMirror from '@uiw/react-codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { json } from '@codemirror/lang-json';
 import { css } from '@codemirror/lang-css';
-import { oneDark } from '@codemirror/theme-one-dark';
 import { FileCode, Loader2 } from "lucide-react";
+import {githubDark} from '@uiw/codemirror-theme-github';
 
 interface CodeEditorProps {
   content: string;
@@ -57,7 +57,7 @@ export function CodeEditor({ content, filePath, isLoading, onCodeChange }: CodeE
       <CodeMirror
         value={content}
         height="100%"
-        theme={oneDark}
+        theme={githubDark}
         editable={false}
         extensions={getLanguage(filePath)}
         onChange={(value) => onCodeChange?.(value)}

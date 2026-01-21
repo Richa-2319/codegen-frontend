@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Code, Eye, Sparkles, LogOut, RotateCcw, Maximize2, RefreshCw, Plus } from "lucide-react";
+import { Code, Sparkles, LogOut, RotateCcw, Maximize2, RefreshCw } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ChatPanel, ChatMessage } from "@/components/ChatPanel";
 import { CodePanel } from "@/components/CodePanel";
@@ -21,6 +21,9 @@ export function ProjectView() {
   const [viewMode, setViewMode] = useState<ViewMode>("preview");
   const [updatedFiles, setUpdatedFiles] = useState<Map<string, string>>(new Map());
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  
+  // Track edited files for current streaming response
+  const currentEditedFilesRef = useRef<string[]>([]);
 
   // Check authentication
   useEffect(() => {
@@ -41,6 +44,7 @@ export function ProjectView() {
           id: msg.id.toString(),
           role: msg.role === "USER" ? "user" : "assistant",
           content: msg.content,
+          createdAt: msg.createdAt,
         }));
         setMessages(formattedMessages);
       } catch (error) {
@@ -61,6 +65,9 @@ export function ProjectView() {
   const handleSendMessage = useCallback((content: string) => {
     if (!projectId) return;
 
+    // Reset edited files tracker
+    currentEditedFilesRef.current = [];
+
     // Add user message
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -78,22 +85,20 @@ export function ProjectView() {
       role: "assistant",
       content: "",
       isStreaming: true,
+      editedFiles: [],
     };
     
     setMessages((prev) => [...prev, aiMessage]);
 
-    let streamedContent = "";
-
     const cleanup = api.streamChat(
       projectId,
       content,
-      (text) => {
-        // Update streaming message
-        streamedContent = text;
+      (chunk) => {
+        // Append chunk to streaming message (character by character)
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === aiMessageId
-              ? { ...msg, content: streamedContent, isStreaming: true }
+              ? { ...msg, content: msg.content + chunk, isStreaming: true }
               : msg
           )
         );
@@ -101,16 +106,28 @@ export function ProjectView() {
       (path, fileContent) => {
         // Update file content
         setUpdatedFiles((prev) => new Map(prev).set(path, fileContent));
-        toast({
-          title: "File updated",
-          description: path,
-        });
+        
+        // Track edited file
+        if (!currentEditedFilesRef.current.includes(path)) {
+          currentEditedFilesRef.current.push(path);
+        }
+        
+        // Update the message with edited files
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === aiMessageId
+              ? { ...msg, editedFiles: [...currentEditedFilesRef.current] }
+              : msg
+          )
+        );
       },
       () => {
         // Stream complete
         setMessages((prev) =>
           prev.map((msg) =>
-            msg.id === aiMessageId ? { ...msg, isStreaming: false } : msg
+            msg.id === aiMessageId 
+              ? { ...msg, isStreaming: false, editedFiles: [...currentEditedFilesRef.current] } 
+              : msg
           )
         );
         setIsStreaming(false);

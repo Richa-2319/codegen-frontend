@@ -43,6 +43,8 @@ export interface ChatHistoryMessage {
 
 // LocalStorage keys
 export const PREVIEW_URL_KEY = "preview_url";
+export const OPEN_TABS_KEY = "open_tabs";
+export const ACTIVE_TAB_KEY = "active_tab";
 
 // API response format for files endpoint
 interface FilesApiResponse {
@@ -136,7 +138,6 @@ export const api = {
   },
 
   async getFileContent(projectId: string, path: string): Promise<string> {
-    // Use a template string to append the path as a query parameter
     const response = await fetch(
       `${BASE_URL}/api/projects/${projectId}/files/content?path=${path}`, 
       {
@@ -145,11 +146,8 @@ export const api = {
     );
 
     const data = await response.json();
-
-    console.log("API Response Data:", data); // Debugging line
     
     if (!response.ok) {
-      // Optional: Log the status code to help debugging
       console.error(`Error fetching file: ${response.status} ${response.statusText}`);
       throw new Error("Failed to fetch file content");
     }
@@ -182,133 +180,106 @@ export const api = {
     return response.json();
   },
 
-  // streamChat(projectId: string, message: string, onMessage: (text: string) => void, onFile: (path: string, content: string) => void, onComplete: () => void, onError: (error: Error) => void) {
-  //   const controller = new AbortController();
-    
-  //   fetch(`${BASE_URL}/api/chat/stream`, {
-  //     method: "POST",
-  //     headers: {
-  //       "Content-Type": "application/json",
-  //       ...getAuthHeaders(),
-  //     },
-  //     body: JSON.stringify({ message, projectId }),
-  //     signal: controller.signal,
-  //   })
-  //     .then(async (response) => {
-  //       if (!response.ok) {
-  //         throw new Error("Chat stream failed");
-  //       }
-
-  //       const reader = response.body?.getReader();
-  //       if (!reader) {
-  //         throw new Error("No reader available");
-  //       }
-
-  //       const decoder = new TextDecoder();
-  //       let buffer = "";
-
-  //       while (true) {
-  //         const { done, value } = await reader.read();
-  //         if (done) break;
-
-  //         buffer += decoder.decode(value, { stream: true });
-          
-  //         // Parse message tags
-  //         const messageRegex = /<message>([\s\S]*?)<\/message>/g;
-  //         let messageMatch;
-  //         while ((messageMatch = messageRegex.exec(buffer)) !== null) {
-  //           onMessage(messageMatch[1]);
-  //           buffer = buffer.replace(messageMatch[0], "");
-  //         }
-
-  //         // Parse file tags
-  //         const fileRegex = /<file path="([^"]+)">([\s\S]*?)<\/file>/g;
-  //         let fileMatch;
-  //         while ((fileMatch = fileRegex.exec(buffer)) !== null) {
-  //           onFile(fileMatch[1], fileMatch[2]);
-  //           buffer = buffer.replace(fileMatch[0], "");
-  //         }
-
-  //         // Handle partial message content for streaming effect
-  //         const partialMessageStart = buffer.indexOf("<message>");
-  //         if (partialMessageStart !== -1) {
-  //           const partialContent = buffer.slice(partialMessageStart + 9);
-  //           if (partialContent && !partialContent.includes("</message>")) {
-  //             onMessage(partialContent);
-  //           }
-  //         }
-  //       }
-
-  //       onComplete();
-  //     })
-  //     .catch((error) => {
-  //       if (error.name !== "AbortError") {
-  //         onError(error);
-  //       }
-  //     });
-
-  //   return () => controller.abort();
-  // },
-
-  async streamChat(projectId: string, message: string, onMessage: (text: string) => void, onFile: (path: string, content: string) => void, onComplete: () => void, onError: (error: Error) => void) {
+  streamChat(
+    projectId: string, 
+    message: string, 
+    onChunk: (chunk: string) => void, 
+    onFile: (path: string, content: string) => void, 
+    onComplete: () => void, 
+    onError: (error: Error) => void
+  ) {
     const controller = new AbortController();
     
-    try {
-      const response = await fetch(`${BASE_URL}/api/chat/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ message, projectId }),
-        signal: controller.signal,
-      });
+    fetch(`${BASE_URL}/api/chat/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ message, projectId }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Chat stream failed");
 
-      if (!response.ok) throw new Error("Chat stream failed");
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // 1. Process Completed Files (Files should be processed only when complete)
-        const fileRegex = /<file path="([^"]+)">([\s\S]*?)<\/file>/g;
-        let fileMatch;
-        while ((fileMatch = fileRegex.exec(buffer)) !== null) {
-          onFile(fileMatch[1], fileMatch[2]);
-          // Only replace the completed file block
-          buffer = buffer.replace(fileMatch[0], "");
-          fileRegex.lastIndex = 0; // Reset regex state after string mutation
-        }
-
-        // 2. Process Streaming Message Content
-        // We look for content between <message> and </message> or after a <message> tag
-        const messageStartTag = "<message>";
-        const messageEndTag = "</message>";
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No reader available");
         
-        const startIndex = buffer.indexOf(messageStartTag);
-        const endIndex = buffer.indexOf(messageEndTag);
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let insideMessage = false;
+        let insideFile = false;
+        let currentFilePath = "";
+        let fileContent = "";
 
-        if (startIndex !== -1) {
-          if (endIndex !== -1) {
-            // Full message block found
-            const fullContent = buffer.substring(startIndex + messageStartTag.length, endIndex);
-            onMessage(fullContent);
-            // Remove the full message block from buffer
-            buffer = buffer.substring(endIndex + messageEndTag.length);
-          } else {
-            // Message is still streaming
-            const partialContent = buffer.substring(startIndex + messageStartTag.length);
-            onMessage(partialContent);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+
+          // Process buffer character by character for streaming
+          while (buffer.length > 0) {
+            // Check for file start tag
+            const fileStartMatch = buffer.match(/^<file path="([^"]+)">/);
+            if (fileStartMatch) {
+              insideFile = true;
+              currentFilePath = fileStartMatch[1];
+              fileContent = "";
+              buffer = buffer.slice(fileStartMatch[0].length);
+              continue;
+            }
+
+            // Check for file end tag
+            if (insideFile && buffer.startsWith("</file>")) {
+              onFile(currentFilePath, fileContent);
+              insideFile = false;
+              currentFilePath = "";
+              buffer = buffer.slice(7); // "</file>".length
+              continue;
+            }
+
+            // Check for message start tag
+            if (buffer.startsWith("<message>")) {
+              insideMessage = true;
+              buffer = buffer.slice(9); // "<message>".length
+              continue;
+            }
+
+            // Check for message end tag
+            if (insideMessage && buffer.startsWith("</message>")) {
+              insideMessage = false;
+              buffer = buffer.slice(10); // "</message>".length
+              continue;
+            }
+
+            // Handle content inside tags
+            if (insideFile) {
+              // For files, accumulate content but don't stream it
+              fileContent += buffer[0];
+              buffer = buffer.slice(1);
+            } else if (insideMessage) {
+              // For messages, stream each character
+              onChunk(buffer[0]);
+              buffer = buffer.slice(1);
+            } else {
+              // Outside any tag, check if we might be starting a tag
+              if (buffer[0] === "<") {
+                // Might be a tag, wait for more data
+                break;
+              }
+              // Discard unknown content
+              buffer = buffer.slice(1);
+            }
           }
         }
-      }
-      onComplete();
-    } catch (error: any) {
-      if (error.name !== "AbortError") onError(error);
-    }
+
+        onComplete();
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          onError(error);
+        }
+      });
+
     return () => controller.abort();
   }
 };

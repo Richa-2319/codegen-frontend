@@ -8,6 +8,15 @@ interface CodePanelProps {
   updatedFiles: Map<string, string>;
 }
 
+// Helper to find a file by path in the tree
+function findFileInTree(files: FileNode[], targetPath: string): boolean {
+  for (const node of files) {
+    if (node.path === targetPath) return true;
+    if (node.children && findFileInTree(node.children, targetPath)) return true;
+  }
+  return false;
+}
+
 export function CodePanel({ projectId, updatedFiles }: CodePanelProps) {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -22,6 +31,15 @@ export function CodePanel({ projectId, updatedFiles }: CodePanelProps) {
       try {
         const fileTree = await api.getFiles(projectId);
         setFiles(fileTree);
+        
+        // Default to pages/Index.tsx or src/pages/Index.tsx if exists
+        const defaultPaths = ["src/pages/Index.tsx", "pages/Index.tsx"];
+        for (const defaultPath of defaultPaths) {
+          if (findFileInTree(fileTree, defaultPath)) {
+            setSelectedPath(defaultPath);
+            break;
+          }
+        }
       } catch (error) {
         console.error("Failed to load files:", error);
       } finally {

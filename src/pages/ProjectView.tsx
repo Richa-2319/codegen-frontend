@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Code, Eye, Sparkles, LogOut } from "lucide-react";
+import { Code, Eye, Sparkles, LogOut, RotateCcw, Maximize2, RefreshCw, Plus } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ChatPanel, ChatMessage } from "@/components/ChatPanel";
 import { CodePanel } from "@/components/CodePanel";
@@ -18,8 +18,9 @@ export function ProjectView() {
   
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("code");
+  const [viewMode, setViewMode] = useState<ViewMode>("preview");
   const [updatedFiles, setUpdatedFiles] = useState<Map<string, string>>(new Map());
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
   // Check authentication
   useEffect(() => {
@@ -27,6 +28,30 @@ export function ProjectView() {
       navigate("/login");
     }
   }, [navigate]);
+
+  // Load chat history on mount
+  useEffect(() => {
+    if (!projectId) return;
+
+    const loadChatHistory = async () => {
+      setIsLoadingHistory(true);
+      try {
+        const history = await api.getChatHistory(projectId);
+        const formattedMessages: ChatMessage[] = history.map((msg) => ({
+          id: msg.id.toString(),
+          role: msg.role === "USER" ? "user" : "assistant",
+          content: msg.content,
+        }));
+        setMessages(formattedMessages);
+      } catch (error) {
+        console.error("Failed to load chat history:", error);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+
+    loadChatHistory();
+  }, [projectId]);
 
   const handleLogout = () => {
     removeAuthToken();
@@ -120,36 +145,68 @@ export function ProjectView() {
   }
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden bg-background">
       {/* Header */}
-      <header className="h-14 shrink-0 border-b border-border/50 bg-panel flex items-center justify-between px-4">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-primary" />
+      <header className="h-12 shrink-0 border-b border-border/50 bg-panel flex items-center justify-between px-3">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
           </div>
-          <span className="font-semibold gradient-text">Lovable</span>
-          <span className="text-muted-foreground text-sm">/ {projectId}</span>
+          <span className="font-semibold text-sm">Project Companion</span>
+          <span className="text-muted-foreground text-xs">Previewing last saved version</span>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {/* History button */}
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+            <RotateCcw className="w-4 h-4" />
+          </Button>
+          
+          {/* View Mode Toggle */}
+          <div className="flex items-center bg-muted/30 rounded-lg p-0.5 mx-2">
+            <button
+              onClick={() => setViewMode("preview")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded-md ${
+                viewMode === "preview" 
+                  ? "bg-primary text-primary-foreground" 
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Sparkles className="w-3 h-3" />
+              Preview
+            </button>
+            <button
+              onClick={() => setViewMode("code")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded-md ${
+                viewMode === "code" 
+                  ? "bg-muted text-foreground" 
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Code className="w-3 h-3" />
+              Code
+            </button>
+          </div>
+
+          {/* Additional toolbar buttons */}
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+            <Maximize2 className="w-4 h-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+            <RefreshCw className="w-4 h-4" />
+          </Button>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* View Mode Toggle */}
-          <div className="flex items-center bg-muted/50 rounded-lg p-1">
-            <button
-              onClick={() => setViewMode("code")}
-              className={`tab-button ${viewMode === "code" ? "active" : ""}`}
-            >
-              <Code className="w-4 h-4 mr-2 inline-block" />
-              Code
-            </button>
-            <button
-              onClick={() => setViewMode("preview")}
-              className={`tab-button ${viewMode === "preview" ? "active" : ""}`}
-            >
-              <Eye className="w-4 h-4 mr-2 inline-block" />
-              Preview
-            </button>
-          </div>
-
+          <Button variant="outline" size="sm" className="h-8 text-xs">
+            Share
+          </Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs">
+            Upgrade
+          </Button>
+          <Button size="sm" className="h-8 text-xs bg-primary hover:bg-primary/90">
+            Publish
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -165,20 +222,21 @@ export function ProjectView() {
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal" className="h-full">
           {/* Chat Panel */}
-          <ResizablePanel defaultSize={40} minSize={25} maxSize={60}>
-            <div className="h-full glass-panel border-r border-border/50">
+          <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
+            <div className="h-full border-r border-border/50 bg-panel">
               <ChatPanel
                 messages={messages}
                 onSendMessage={handleSendMessage}
                 isStreaming={isStreaming}
+                isLoading={isLoadingHistory}
               />
             </div>
           </ResizablePanel>
 
-          <ResizableHandle className="w-1 bg-border/50 hover:bg-primary/50 transition-colors" />
+          <ResizableHandle className="w-px bg-border/50 hover:bg-primary/50 transition-colors" />
 
           {/* Code/Preview Panel */}
-          <ResizablePanel defaultSize={60} minSize={40} maxSize={75}>
+          <ResizablePanel defaultSize={65} minSize={50} maxSize={75}>
             <div className="h-full">
               {viewMode === "code" ? (
                 <CodePanel projectId={projectId} updatedFiles={updatedFiles} />

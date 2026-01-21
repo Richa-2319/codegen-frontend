@@ -1,22 +1,25 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, User, Bot } from "lucide-react";
+import { Send, Loader2, User, Bot, Plus, Bookmark, MoreHorizontal, ThumbsUp, ThumbsDown, Copy, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { format } from "date-fns";
 
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
+  createdAt?: string;
 }
 
 interface ChatPanelProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   isStreaming: boolean;
+  isLoading?: boolean;
 }
 
-export function ChatPanel({ messages, onSendMessage, isStreaming }: ChatPanelProps) {
+export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -59,65 +62,103 @@ export function ChatPanel({ messages, onSendMessage, isStreaming }: ChatPanelPro
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="panel-header shrink-0">
-        <h2 className="font-semibold">Chat</h2>
-        {isStreaming && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            Thinking...
-          </div>
-        )}
-      </div>
-
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 ? (
+      <div className="flex-1 overflow-y-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-8">
-            <div className="w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center mb-4">
-              <Bot className="w-8 h-8 text-primary" />
+            <div className="w-14 h-14 rounded-xl bg-primary/20 flex items-center justify-center mb-4">
+              <Bot className="w-7 h-7 text-primary" />
             </div>
-            <h3 className="text-lg font-medium mb-2">Start a conversation</h3>
+            <h3 className="text-base font-medium mb-1">Start a conversation</h3>
             <p className="text-sm text-muted-foreground max-w-xs">
-              Describe what you want to build or modify, and I'll help you create it.
+              Describe what you want to build or modify
             </p>
           </div>
         ) : (
-          messages.map((message) => (
-            <div
-              key={message.id}
-              className={`chat-message ${message.role === "user" ? "user" : "ai"}`}
-            >
-              <div className="flex items-start gap-3">
-                <div
-                  className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
-                    message.role === "user" ? "bg-primary/30" : "bg-secondary/30"
-                  }`}
-                >
+          <div className="space-y-0">
+            {messages.map((message, index) => (
+              <div key={message.id}>
+                {/* Message card container */}
+                <div className={`p-4 ${message.role === "user" ? "bg-panel" : "bg-background"}`}>
+                  {/* User message styling */}
                   {message.role === "user" ? (
-                    <User className="w-4 h-4" />
+                    <div className="space-y-2">
+                      {/* Timestamp for user messages */}
+                      {message.createdAt && (
+                        <div className="text-xs text-muted-foreground text-center mb-2">
+                          {format(new Date(message.createdAt), "d MMM 'at' HH:mm")}
+                        </div>
+                      )}
+                      <div className="bg-muted/50 rounded-lg p-3">
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                          {message.content}
+                        </p>
+                      </div>
+                      {/* Action buttons for user message */}
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                          <ThumbsUp className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                          <ThumbsDown className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                          <Copy className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                          <MoreHorizontal className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
                   ) : (
-                    <Bot className="w-4 h-4" />
+                    /* Assistant message styling */
+                    <div className="space-y-3">
+                      {/* Version indicator card */}
+                      {message.content && (
+                        <div className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-panel/50">
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">Implement Lovable UI scaffolding</span>
+                              <div className="flex items-center gap-1">
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground">
+                                  <Bookmark className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </div>
+                            <span className="text-xs text-muted-foreground">Preview this version</span>
+                          </div>
+                          <Button variant="outline" size="sm" className="h-7 text-xs">
+                            <span className="mr-1">&lt;/&gt;</span> Code
+                          </Button>
+                        </div>
+                      )}
+                      
+                      {/* Message content */}
+                      {message.content && (
+                        <div className="text-sm leading-relaxed whitespace-pre-wrap break-words text-muted-foreground">
+                          {message.content}
+                          {message.isStreaming && <span className="streaming-cursor" />}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium mb-1 text-muted-foreground">
-                    {message.role === "user" ? "You" : "Lovable"}
-                  </p>
-                  <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                    {message.content}
-                    {message.isStreaming && <span className="streaming-cursor" />}
-                  </div>
-                </div>
               </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
       {/* Input */}
-      <div className="shrink-0 p-4 border-t border-border/50">
+      <div className="shrink-0 p-3 border-t border-border/50 bg-panel">
         <form onSubmit={handleSubmit} className="relative">
           <Textarea
             ref={textareaRef}
@@ -125,7 +166,7 @@ export function ChatPanel({ messages, onSendMessage, isStreaming }: ChatPanelPro
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
             placeholder="Describe what you want to build..."
-            className="min-h-[56px] max-h-[200px] pr-14 resize-none bg-input border-border/50 focus:border-primary transition-colors"
+            className="min-h-[48px] max-h-[200px] pr-12 resize-none bg-muted/30 border-border/30 focus:border-primary/50 rounded-xl text-sm"
             disabled={isStreaming}
             rows={1}
           />
@@ -133,7 +174,7 @@ export function ChatPanel({ messages, onSendMessage, isStreaming }: ChatPanelPro
             type="submit"
             size="icon"
             disabled={!input.trim() || isStreaming}
-            className="absolute right-2 bottom-2 h-10 w-10 bg-primary hover:bg-primary/90 disabled:opacity-50 transition-all"
+            className="absolute right-2 bottom-2 h-8 w-8 rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-30"
           >
             {isStreaming ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -142,6 +183,35 @@ export function ChatPanel({ messages, onSendMessage, isStreaming }: ChatPanelPro
             )}
           </Button>
         </form>
+        
+        {/* Bottom toolbar */}
+        <div className="flex items-center justify-between mt-2">
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground gap-1">
+              <Plus className="w-3 h-3" />
+            </Button>
+            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground gap-1">
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 flex items-center justify-center">✨</span>
+                Visual edits
+              </span>
+            </Button>
+            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground gap-1">
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 flex items-center justify-center">💬</span>
+                Chat
+              </span>
+            </Button>
+          </div>
+          <div className="flex items-center gap-1">
+            {isStreaming && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Thinking...
+              </span>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

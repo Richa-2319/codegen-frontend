@@ -34,6 +34,16 @@ export interface DeployResponse {
   previewUrl: string;
 }
 
+export interface ChatHistoryMessage {
+  id: number;
+  role: "USER" | "ASSISTANT";
+  content: string;
+  createdAt: string;
+}
+
+// LocalStorage keys
+export const PREVIEW_URL_KEY = "preview_url";
+
 // API response format for files endpoint
 interface FilesApiResponse {
   files: { path: string }[];
@@ -155,6 +165,18 @@ export const api = {
     
     if (!response.ok) {
       throw new Error("Deployment failed");
+    }
+    
+    return response.json();
+  },
+
+  async getChatHistory(projectId: string): Promise<ChatHistoryMessage[]> {
+    const response = await fetch(`${BASE_URL}/api/chat/projects/${projectId}`, {
+      headers: { ...getAuthHeaders() },
+    });
+    
+    if (!response.ok) {
+      throw new Error("Failed to fetch chat history");
     }
     
     return response.json();

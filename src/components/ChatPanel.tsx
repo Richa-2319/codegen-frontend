@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, User, Bot, Plus, Bookmark, MoreHorizontal, ThumbsUp, ThumbsDown, Copy, RotateCcw } from "lucide-react";
+import { Send, Loader2, Bot, ThumbsUp, ThumbsDown, Copy, RotateCcw, MoreHorizontal, FileCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
@@ -12,6 +12,7 @@ export interface ChatMessage {
   content: string;
   isStreaming?: boolean;
   createdAt?: string;
+  editedFiles?: string[]; // Track files edited before this message
 }
 
 interface ChatPanelProps {
@@ -20,6 +21,9 @@ interface ChatPanelProps {
   isStreaming: boolean;
   isLoading?: boolean;
 }
+
+// Helper to get filename from path
+const getFileName = (path: string) => path.split('/').pop() || path;
 
 export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: ChatPanelProps) {
   const [input, setInput] = useState("");
@@ -82,7 +86,7 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
           </div>
         ) : (
           <div className="space-y-0">
-            {messages.map((message, index) => (
+            {messages.map((message) => (
               <div key={message.id}>
                 {/* Message card container */}
                 <div className={`p-4 bg-background`}>
@@ -104,6 +108,22 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
                   ) : (
                     /* Assistant message styling */
                     <div className="space-y-3">
+                      {/* Edited files badges - shown above assistant message */}
+                      {message.editedFiles && message.editedFiles.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                        {message.editedFiles.map((filePath, index) => (
+                            <div
+                              key={`${filePath}-${index}`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-accent/50 border border-accent text-accent-foreground text-xs font-medium"
+                            >
+                              <FileCode className="w-3 h-3" />
+                              <span>Edited</span>
+                              <span className="text-primary">{getFileName(filePath)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
                       {/* Message content */}
                       {message.content && (
                         <div className="text-sm leading-relaxed break-words text-muted-foreground prose prose-invert prose-sm max-w-none">
@@ -113,24 +133,27 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
                           {message.isStreaming && <span className="streaming-cursor inline-block w-1.5 h-4 ml-1 bg-primary animate-pulse" />}
                         </div>
                       )}
-                      {/* Action buttons for user message */}
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                          <RotateCcw className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                          <ThumbsUp className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                          <ThumbsDown className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                          <Copy className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                          <MoreHorizontal className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+                      
+                      {/* Action buttons for assistant message */}
+                      {!message.isStreaming && message.content && (
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                            <ThumbsUp className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                            <ThumbsDown className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                            <MoreHorizontal className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -171,9 +194,6 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
         {/* Bottom toolbar */}
         <div className="flex items-center justify-between mt-2">
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground gap-1">
-              <Plus className="w-3 h-3" />
-            </Button>
             <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground gap-1">
               <span className="flex items-center gap-1">
                 <span className="w-3 h-3 flex items-center justify-center">✨</span>

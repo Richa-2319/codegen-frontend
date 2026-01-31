@@ -9,19 +9,21 @@ import { Button } from "@/components/ui/button";
 import { api, isAuthenticated, removeAuthToken } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
+import { RuntimeErrorAlert, RuntimeError } from "@/components/RuntimeErrorAlert";
 type ViewMode = "code" | "preview";
 
 export function ProjectView() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("preview");
   const [updatedFiles, setUpdatedFiles] = useState<Map<string, string>>(new Map());
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
-  
+  const [runtimeError, setRuntimeError] = useState<RuntimeError | null>(null);
+
   // Track edited files for current streaming response
   const currentEditedFilesRef = useRef<string[]>([]);
 
@@ -45,6 +47,7 @@ export function ProjectView() {
           role: msg.role === "USER" ? "user" : "assistant",
           content: msg.content,
           createdAt: msg.createdAt,
+          events: msg.events,
         }));
         setMessages(formattedMessages);
       } catch (error) {
@@ -74,7 +77,7 @@ export function ProjectView() {
       role: "user",
       content,
     };
-    
+
     setMessages((prev) => [...prev, userMessage]);
     setIsStreaming(true);
 
@@ -87,7 +90,7 @@ export function ProjectView() {
       isStreaming: true,
       editedFiles: [],
     };
-    
+
     setMessages((prev) => [...prev, aiMessage]);
 
     const cleanup = api.streamChat(
@@ -106,12 +109,12 @@ export function ProjectView() {
       (path, fileContent) => {
         // Update file content
         setUpdatedFiles((prev) => new Map(prev).set(path, fileContent));
-        
+
         // Track edited file
         if (!currentEditedFilesRef.current.includes(path)) {
           currentEditedFilesRef.current.push(path);
         }
-        
+
         // Update the message with edited files
         setMessages((prev) =>
           prev.map((msg) =>
@@ -125,8 +128,8 @@ export function ProjectView() {
         // Stream complete
         setMessages((prev) =>
           prev.map((msg) =>
-            msg.id === aiMessageId 
-              ? { ...msg, isStreaming: false, editedFiles: [...currentEditedFilesRef.current] } 
+            msg.id === aiMessageId
+              ? { ...msg, isStreaming: false, editedFiles: [...currentEditedFilesRef.current] }
               : msg
           )
         );
@@ -153,6 +156,47 @@ export function ProjectView() {
     return cleanup;
   }, [projectId, toast]);
 
+  // Listen for runtime errors from the preview iframe
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Security check: ensure message is from our expected source if possible
+      // In local dev, origins might be localhost:5173 or localhost:8080
+
+      const data = event.data;
+      if (data?.type === 'PreviewError') {
+        const error = data.payload;
+        console.log("Caught runtime error:", error);
+        setRuntimeError({
+          message: error.message,
+          source: data.subType,
+          stack: error.stack,
+          filename: error.source, // Map filename from payload source
+          lineno: error.lineno,
+          colno: error.colno,
+        });
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const handleFixError = useCallback((error: RuntimeError) => {
+    const prompt = `I encountered a ${error.source || "runtime error"} in my application:
+    
+Error Message: ${error.message}
+${error.filename ? `File: ${error.filename}` : ''}
+${error.lineno ? `Line: ${error.lineno}` : ''}
+
+Stack Trace:
+${error.stack || "No stack trace available"}
+
+Please analyze this error and fix the code to resolve it.`;
+
+    handleSendMessage(prompt);
+    setRuntimeError(null);
+  }, [handleSendMessage]);
+
   if (!projectId) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -178,27 +222,25 @@ export function ProjectView() {
           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
             <RotateCcw className="w-4 h-4" />
           </Button>
-          
+
           {/* View Mode Toggle */}
           <div className="flex items-center bg-muted/30 rounded-lg p-0.5 mx-2">
             <button
               onClick={() => setViewMode("preview")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded-md ${
-                viewMode === "preview" 
-                  ? "bg-primary text-primary-foreground" 
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded-md ${viewMode === "preview"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
             >
               <Sparkles className="w-3 h-3" />
               Preview
             </button>
             <button
               onClick={() => setViewMode("code")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded-md ${
-                viewMode === "code" 
-                  ? "bg-muted text-foreground" 
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded-md ${viewMode === "code"
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+                }`}
             >
               <Code className="w-3 h-3" />
               Code
@@ -258,7 +300,12 @@ export function ProjectView() {
               {viewMode === "code" ? (
                 <CodePanel projectId={projectId} updatedFiles={updatedFiles} />
               ) : (
-                <PreviewPanel projectId={projectId} />
+                <PreviewPanel
+                  projectId={projectId}
+                  runtimeError={runtimeError}
+                  onDismiss={() => setRuntimeError(null)}
+                  onFix={handleFixError}
+                />
               )}
             </div>
           </ResizablePanel>

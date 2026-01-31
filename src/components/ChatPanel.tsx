@@ -3,8 +3,9 @@ import { Send, Loader2, Bot, ThumbsUp, ThumbsDown, Copy, RotateCcw, MoreHorizont
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { useStreamParser } from "../hooks/use-stream-parser";
+import { ChatEventRenderer } from './ChatEventRenderer';
+import { ChatEvent } from "@/lib/types";
 
 export interface ChatMessage {
   id: string;
@@ -12,7 +13,8 @@ export interface ChatMessage {
   content: string;
   isStreaming?: boolean;
   createdAt?: string;
-  editedFiles?: string[]; // Track files edited before this message
+  events?: ChatEvent[]; // Structured events from the database
+  editedFiles?: string[];
 }
 
 interface ChatPanelProps {
@@ -21,9 +23,6 @@ interface ChatPanelProps {
   isStreaming: boolean;
   isLoading?: boolean;
 }
-
-// Helper to get filename from path
-const getFileName = (path: string) => path.split('/').pop() || path;
 
 export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: ChatPanelProps) {
   const [input, setInput] = useState("");
@@ -41,10 +40,10 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
-    
+
     onSendMessage(input.trim());
     setInput("");
-    
+
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
@@ -59,15 +58,13 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
-    
-    // Auto-resize textarea
     const textarea = e.target;
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-background">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
@@ -85,87 +82,18 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
             </p>
           </div>
         ) : (
-          <div className="space-y-0">
+          <div className="flex flex-col">
             {messages.map((message) => (
-              <div key={message.id}>
-                {/* Message card container */}
-                <div className={`p-4 bg-background`}>
-                  {/* User message styling */}
-                  {message.role === "user" ? (
-                    <div className="space-y-2">
-                      {/* Timestamp for user messages */}
-                      {message.createdAt && (
-                        <div className="text-xs text-muted-foreground text-center mb-2">
-                          {format(new Date(message.createdAt), "d MMM 'at' HH:mm")}
-                        </div>
-                      )}
-                      <div className="bg-muted/50 rounded-lg p-3 max-w-[80%] ml-auto flex justify-between items-start gap-2">
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words align-right">
-                          {message.content}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    /* Assistant message styling */
-                    <div className="space-y-3">
-                      {/* Edited files badges - shown above assistant message */}
-                      {message.editedFiles && message.editedFiles.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-2">
-                        {message.editedFiles.map((filePath, index) => (
-                            <div
-                              key={`${filePath}-${index}`}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-accent/50 border border-accent text-accent-foreground text-xs font-medium"
-                            >
-                              <FileCode className="w-3 h-3" />
-                              <span>Edited</span>
-                              <span className="text-primary">{getFileName(filePath)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      
-                      {/* Message content */}
-                      {message.content && (
-                        <div className="text-sm leading-relaxed break-words text-muted-foreground prose prose-invert prose-sm max-w-none">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {message.content}
-                          </ReactMarkdown>
-                          {message.isStreaming && <span className="streaming-cursor inline-block w-1.5 h-4 ml-1 bg-primary animate-pulse" />}
-                        </div>
-                      )}
-                      
-                      {/* Action buttons for assistant message */}
-                      {!message.isStreaming && message.content && (
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                            <RotateCcw className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                            <ThumbsUp className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                            <ThumbsDown className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                            <Copy className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                            <MoreHorizontal className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <MessageItem key={message.id} message={message}
+                isStreaming={isStreaming && message.isStreaming} />
             ))}
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="shrink-0 p-3 border-t border-border/50 bg-panel">
+      {/* Input Area */}
+      <div className="shrink-0 p-3 border-t border-border/50 bg-card">
         <form onSubmit={handleSubmit} className="relative">
           <Textarea
             ref={textareaRef}
@@ -181,7 +109,7 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
             type="submit"
             size="icon"
             disabled={!input.trim() || isStreaming}
-            className="absolute right-2 bottom-2 h-8 w-8 rounded-lg bg-primary hover:bg-primary/90 disabled:opacity-30"
+            className="absolute right-2 bottom-2 h-8 w-8 rounded-lg"
           >
             {isStreaming ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -190,32 +118,86 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
             )}
           </Button>
         </form>
-        
-        {/* Bottom toolbar */}
-        <div className="flex items-center justify-between mt-2">
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground gap-1">
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 flex items-center justify-center">✨</span>
-                Visual edits
-              </span>
-            </Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground gap-1">
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 flex items-center justify-center">💬</span>
-                Chat
-              </span>
-            </Button>
+
+        <div className="flex items-center justify-between mt-2 px-1">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>✨ AI-Powered Design System</span>
           </div>
-          <div className="flex items-center gap-1">
-            {isStreaming && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Thinking...
+          {isStreaming && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1 font-medium">
+              <Loader2 className="w-3 h-3 animate-spin text-primary" />
+              Thinking...
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Inner Component to handle logic per message
+function MessageItem({ message, isStreaming }: { message: ChatMessage, isStreaming: boolean }) {
+  // Use the stream parser to turn raw XML text into Event objects live
+  // 1. Parse content live if we are streaming OR if we don't have DB events yet
+  const liveEvents = useStreamParser(message.content || "");
+
+  // 2. Logic: If we have DB events, use them. Otherwise, use the parsed content.
+  const eventsToRender = (message.events && message.events.length > 0)
+    ? message.events
+    : liveEvents;
+
+  return (
+    <div className={`p-5 border-b border-border/10 ${message.role === 'user' ? 'bg-muted/10' : 'bg-background'}`}>
+      <div className="max-w-4xl mx-auto">
+        {message.role === "user" ? (
+          <div className="flex flex-col items-end gap-2">
+            <div className="bg-primary/10 text-primary-foreground text-sm py-2.5 px-4 rounded-2xl rounded-tr-none border border-primary/20 max-w-[85%]">
+              <p className="text-foreground leading-relaxed whitespace-pre-wrap">{message.content}</p>
+            </div>
+            {message.createdAt && (
+              <span className="text-[10px] text-muted-foreground px-1 uppercase tracking-tight">
+                {format(new Date(message.createdAt), "HH:mm")}
               </span>
             )}
           </div>
-        </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Render granular events (Thought, Tool, Message, File) */}
+            <div className="flex flex-col gap-3">
+              {eventsToRender.map((event, idx) => {
+                const isLast = idx === eventsToRender.length - 1;
+                return (
+                  <ChatEventRenderer
+                    key={idx}
+                    event={event}
+                    // It is "loading" only if:
+                    // 1. The message is currently streaming
+                    // 2. AND this is the last event in the list
+                    isLoading={isStreaming && isLast}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Action buttons for assistant message */}
+            {!message.isStreaming && eventsToRender.length > 0 && (
+              <div className="flex items-center gap-1 pt-2">
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
+                  <ThumbsUp className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
+                  <ThumbsDown className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
+                  <Copy className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

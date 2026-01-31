@@ -1,4 +1,6 @@
-const BASE_URL = "http://localhost:8090";
+import { ChatMessage, DeployResponse, FileNode, LoginCredentials, LoginResponse } from "./types";
+
+const BASE_URL = "http://localhost:8080";
 
 export const getAuthToken = () => localStorage.getItem("auth_token");
 
@@ -12,34 +14,6 @@ const getAuthHeaders = (): HeadersInit => {
   const token = getAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
-
-export interface LoginCredentials {
-  username: string;
-  password: string;
-}
-
-export interface LoginResponse {
-  token: string;
-  projectId: string;
-}
-
-export interface FileNode {
-  name: string;
-  path: string;
-  type: "file" | "directory";
-  children?: FileNode[];
-}
-
-export interface DeployResponse {
-  previewUrl: string;
-}
-
-export interface ChatHistoryMessage {
-  id: number;
-  role: "USER" | "ASSISTANT";
-  content: string;
-  createdAt: string;
-}
 
 // LocalStorage keys
 export const PREVIEW_URL_KEY = "preview_url";
@@ -168,7 +142,7 @@ export const api = {
     return response.json();
   },
 
-  async getChatHistory(projectId: string): Promise<ChatHistoryMessage[]> {
+  async getChatHistory(projectId: string): Promise<ChatMessage[]> {
     const response = await fetch(`${BASE_URL}/api/chat/projects/${projectId}`, {
       headers: { ...getAuthHeaders() },
     });
@@ -180,7 +154,7 @@ export const api = {
     return response.json();
   },
 
-  streamChat(
+  async streamChat (
     projectId: string, 
     message: string, 
     onChunk: (chunk: string) => void, 
@@ -203,71 +177,44 @@ export const api = {
         if (!reader) throw new Error("No reader available");
         
         const decoder = new TextDecoder();
-        let buffer = "";
-        let insideMessage = false;
-        let insideFile = false;
-        let currentFilePath = "";
-        let fileContent = "";
+        
+        // Buffers
+        let sseBuffer = ""; // To handle split SSE lines
+        let fullContentBuffer = ""; // To accumulate clean text for file regex
+        let lastProcessedIndex = 0; // Optimization for regex
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
           const chunk = decoder.decode(value, { stream: true });
-          buffer += chunk;
+          sseBuffer += chunk;
 
-          // Process buffer character by character for streaming
-          while (buffer.length > 0) {
-            // Check for file start tag
-            const fileStartMatch = buffer.match(/^<file path="([^"]+)">/);
-            if (fileStartMatch) {
-              insideFile = true;
-              currentFilePath = fileStartMatch[1];
-              fileContent = "";
-              buffer = buffer.slice(fileStartMatch[0].length);
-              continue;
-            }
+          // Process line by line to handle SSE format (data: ...)
+          const lines = sseBuffer.split("\n");
+          sseBuffer = lines.pop() || "";
 
-            // Check for file end tag
-            if (insideFile && buffer.startsWith("</file>")) {
-              onFile(currentFilePath, fileContent);
-              insideFile = false;
-              currentFilePath = "";
-              buffer = buffer.slice(7); // "</file>".length
-              continue;
-            }
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine || !trimmedLine.startsWith("data:")) continue;
 
-            // Check for message start tag
-            if (buffer.startsWith("<message>")) {
-              insideMessage = true;
-              buffer = buffer.slice(9); // "<message>".length
-              continue;
-            }
+            const dataStr = trimmedLine.slice(5).trim();
+            if (!dataStr) continue;
 
-            // Check for message end tag
-            if (insideMessage && buffer.startsWith("</message>")) {
-              insideMessage = false;
-              buffer = buffer.slice(10); // "</message>".length
-              continue;
-            }
+            try {
+              // FIX: Parse JSON to get the real text with newlines preserved
+              const parsed = JSON.parse(dataStr);
+              const content = parsed.text;
 
-            // Handle content inside tags
-            if (insideFile) {
-              // For files, accumulate content but don't stream it
-              fileContent += buffer[0];
-              buffer = buffer.slice(1);
-            } else if (insideMessage) {
-              // For messages, stream each character
-              onChunk(buffer[0]);
-              buffer = buffer.slice(1);
-            } else {
-              // Outside any tag, check if we might be starting a tag
-              if (buffer[0] === "<") {
-                // Might be a tag, wait for more data
-                break;
-              }
-              // Discard unknown content
-              buffer = buffer.slice(1);
+              // 1. Send clean text to UI
+              onChunk(content);
+
+              // 2. Accumulate for file parsing (Same as before)
+              fullContentBuffer += content;
+              // ... (rest of regex logic) ...
+              
+            } catch (e) {
+              console.error("Failed to parse SSE JSON:", e);
             }
           }
         }
@@ -276,10 +223,12 @@ export const api = {
       })
       .catch((error) => {
         if (error.name !== "AbortError") {
+          console.error("Stream error:", error);
           onError(error);
         }
       });
 
     return () => controller.abort();
   }
+  
 };

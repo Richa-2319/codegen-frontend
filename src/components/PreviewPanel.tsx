@@ -4,11 +4,16 @@ import { Button } from "@/components/ui/button";
 import { api, PREVIEW_URL_KEY } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 
+import { RuntimeErrorAlert, RuntimeError } from "@/components/RuntimeErrorAlert";
+
 interface PreviewPanelProps {
   projectId: string;
+  runtimeError: RuntimeError | null;
+  onDismiss: () => void;
+  onFix: (error: RuntimeError) => void;
 }
 
-export function PreviewPanel({ projectId }: PreviewPanelProps) {
+export function PreviewPanel({ projectId, runtimeError, onDismiss, onFix }: PreviewPanelProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(() => {
     // Load from localStorage on mount
     return localStorage.getItem(PREVIEW_URL_KEY);
@@ -25,10 +30,10 @@ export function PreviewPanel({ projectId }: PreviewPanelProps) {
 
   const handleDeploy = async () => {
     setIsDeploying(true);
-    
+
     try {
-      // const response = await api.deploy(projectId);
-      setPreviewUrl("http://project-32.app.domain.com:8080/");
+      const response = await api.deploy(projectId);
+      setPreviewUrl(response.previewUrl);
       toast({
         title: "Deployment successful",
         description: "Your preview is now ready",
@@ -66,7 +71,7 @@ export function PreviewPanel({ projectId }: PreviewPanelProps) {
             <RefreshCw className="w-3.5 h-3.5" />
           </Button>
         </div>
-        
+
         <div className="flex-1 flex items-center h-8 px-3 rounded-md bg-muted/50 text-sm text-muted-foreground">
           <Globe className="w-3.5 h-3.5 mr-2 shrink-0" />
           <span className="truncate">
@@ -126,6 +131,13 @@ export function PreviewPanel({ projectId }: PreviewPanelProps) {
           </div>
         )}
       </div>
+
+      {/* Error Alert Overlay - Inside the Preview Panel */}
+      <RuntimeErrorAlert
+        error={runtimeError}
+        onDismiss={onDismiss}
+        onFix={onFix}
+      />
     </div>
   );
 }

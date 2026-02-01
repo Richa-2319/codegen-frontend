@@ -22,9 +22,10 @@ interface ChatPanelProps {
   onSendMessage: (message: string) => void;
   isStreaming: boolean;
   isLoading?: boolean;
+  readOnly?: boolean;
 }
 
-export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: ChatPanelProps) {
+export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading, readOnly }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -100,15 +101,15 @@ export function ChatPanel({ messages, onSendMessage, isStreaming, isLoading }: C
             value={input}
             onChange={handleTextareaChange}
             onKeyDown={handleKeyDown}
-            placeholder="Describe what you want to build..."
+            placeholder={readOnly ? "You have view-only access to this project" : "Describe what you want to build..."}
             className="min-h-[48px] max-h-[200px] pr-12 resize-none bg-muted/30 border-border/30 focus:border-primary/50 rounded-xl text-sm"
-            disabled={isStreaming}
+            disabled={isStreaming || readOnly}
             rows={1}
           />
           <Button
             type="submit"
             size="icon"
-            disabled={!input.trim() || isStreaming}
+            disabled={!input.trim() || isStreaming || readOnly}
             className="absolute right-2 bottom-2 h-8 w-8 rounded-lg"
           >
             {isStreaming ? (

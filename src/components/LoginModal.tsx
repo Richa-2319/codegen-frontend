@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Loader2, Lock, Mail, Sparkles } from "lucide-react";
-import { api, setAuthToken } from "@/lib/api";
+import { api, setAuthToken, setUserInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,7 @@ export function LoginModal() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!email || !password) {
       toast({
         title: "Missing credentials",
@@ -31,11 +31,14 @@ export function LoginModal() {
     try {
       const response = await api.login({ username: email, password });
       setAuthToken(response.token);
+      if (response.user) {
+        setUserInfo(response.user);
+      }
       toast({
         title: "Welcome back!",
         description: "Successfully logged in",
       });
-      navigate(`/project/${response.projectId}`);
+      navigate("/projects");
     } catch (error) {
       toast({
         title: "Login failed",
@@ -121,9 +124,9 @@ export function LoginModal() {
 
           <p className="text-center text-sm text-muted-foreground mt-6">
             Don't have an account?{" "}
-            <button className="text-primary hover:underline font-medium">
+            <Link to="/signup" className="text-primary hover:underline font-medium">
               Sign up
-            </button>
+            </Link>
           </p>
         </div>
       </div>

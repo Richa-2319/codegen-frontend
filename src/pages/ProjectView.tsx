@@ -1,15 +1,23 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Code, Sparkles, LogOut, RotateCcw, Maximize2, RefreshCw } from "lucide-react";
+import { Code, Sparkles, LogOut, RotateCcw, Maximize2, RefreshCw, MoreVertical, Trash, Download, Edit } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { ChatPanel, ChatMessage } from "@/components/ChatPanel";
 import { CodePanel } from "@/components/CodePanel";
 import { PreviewPanel } from "@/components/PreviewPanel";
 import { Button } from "@/components/ui/button";
-import { api, isAuthenticated, removeAuthToken } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { api, isAuthenticated, removeAuthToken, getUserInfo, removeUserInfo } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 import { RuntimeErrorAlert, RuntimeError } from "@/components/RuntimeErrorAlert";
+import { generateGradient, cn } from "@/lib/utils";
+import { ProjectResponse } from "@/lib/types";
+import { ShareDialog } from "@/components/ShareDialog";
+
 type ViewMode = "code" | "preview";
 
 export function ProjectView() {
@@ -23,6 +31,11 @@ export function ProjectView() {
   const [updatedFiles, setUpdatedFiles] = useState<Map<string, string>>(new Map());
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [runtimeError, setRuntimeError] = useState<RuntimeError | null>(null);
+  const [project, setProject] = useState<ProjectResponse | null>(null);
+
+  // Rename state
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [renameName, setRenameName] = useState("");
 
   // Track edited files for current streaming response
   const currentEditedFilesRef = useRef<string[]>([]);
@@ -38,10 +51,14 @@ export function ProjectView() {
   useEffect(() => {
     if (!projectId) return;
 
-    const loadChatHistory = async () => {
+    const loadData = async () => {
       setIsLoadingHistory(true);
       try {
-        const history = await api.getChatHistory(projectId);
+        const [history, projectData] = await Promise.all([
+          api.getChatHistory(projectId),
+          api.getProject(projectId)
+        ]);
+
         const formattedMessages: ChatMessage[] = history.map((msg) => ({
           id: msg.id.toString(),
           role: msg.role === "USER" ? "user" : "assistant",
@@ -50,18 +67,25 @@ export function ProjectView() {
           events: msg.events,
         }));
         setMessages(formattedMessages);
+        setProject(projectData);
       } catch (error) {
-        console.error("Failed to load chat history:", error);
+        console.error("Failed to load project data:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load project data",
+          variant: "destructive"
+        });
       } finally {
         setIsLoadingHistory(false);
       }
     };
 
-    loadChatHistory();
-  }, [projectId]);
+    loadData();
+  }, [projectId, toast]);
 
   const handleLogout = () => {
     removeAuthToken();
+    removeUserInfo();
     navigate("/login");
   };
 
@@ -197,6 +221,60 @@ Please analyze this error and fix the code to resolve it.`;
     setRuntimeError(null);
   }, [handleSendMessage]);
 
+  const handleDeleteProject = async () => {
+    if (!projectId) return;
+    if (!confirm("Are you sure you want to delete this project? This action cannot be undone.")) return;
+
+    try {
+      await api.deleteProject(projectId);
+      navigate("/projects");
+      toast({ title: "Success", description: "Project deleted successfully" });
+    } catch (error) {
+      console.error("Failed to delete:", error);
+      toast({ title: "Error", description: "Failed to delete project", variant: "destructive" });
+    }
+  };
+
+  const handleDownloadProject = async () => {
+    if (!projectId) return;
+    try {
+      const blob = await api.downloadProjectZip(projectId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `project-${projectId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast({ title: "Success", description: "Download started" });
+    } catch (error) {
+      console.error("Failed to download:", error);
+      toast({ title: "Error", description: "Failed to download project", variant: "destructive" });
+    }
+  };
+
+  const openRenameDialog = () => {
+    if (project) {
+      setRenameName(project.name);
+      setIsRenameDialogOpen(true);
+    }
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!projectId || !renameName.trim()) return;
+
+    try {
+      const updated = await api.updateProject(projectId, renameName);
+      setProject(prev => prev ? { ...prev, name: updated.name } : null);
+      setIsRenameDialogOpen(false);
+      toast({ title: "Success", description: "Project renamed successfully" });
+    } catch (error) {
+      console.error("Failed to rename:", error);
+      toast({ title: "Error", description: "Failed to rename project", variant: "destructive" });
+    }
+  };
+
   if (!projectId) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -210,18 +288,50 @@ Please analyze this error and fix the code to resolve it.`;
       {/* Header */}
       <header className="h-12 shrink-0 border-b border-border/50 bg-panel flex items-center justify-between px-3">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
-          </div>
-          <span className="font-semibold text-sm">Project {projectId}</span>
-          <span className="text-muted-foreground text-xs">Previewing last saved version</span>
+          {project ? (
+            <>
+              <div
+                className="w-7 h-7 rounded-sm shadow-sm"
+                style={generateGradient(project.name)}
+              />
+              <span className="font-semibold text-sm">{project.name}</span>
+            </>
+          ) : (
+            <>
+              <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
+                <Sparkles className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <span className="font-semibold text-sm">Loading...</span>
+            </>
+          )}
+          <span className="text-muted-foreground text-xs ml-2">Previewing last saved version</span>
+          {project?.role !== 'VIEWER' && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-6 w-6 ml-2 text-muted-foreground">
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={openRenameDialog}>
+                  <Edit className="w-4 h-4 mr-2" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDownloadProject}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </DropdownMenuItem>
+                <DropdownMenuItem className="text-red-500 focus:text-red-500" onClick={handleDeleteProject}>
+                  <Trash className="w-4 h-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
         <div className="flex items-center gap-1">
-          {/* History button */}
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-            <RotateCcw className="w-4 h-4" />
-          </Button>
+          
 
           {/* View Mode Toggle */}
           <div className="flex items-center bg-muted/30 rounded-lg p-0.5 mx-2">
@@ -238,7 +348,7 @@ Please analyze this error and fix the code to resolve it.`;
             <button
               onClick={() => setViewMode("code")}
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all rounded-md ${viewMode === "code"
-                ? "bg-muted text-foreground"
+                ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground"
                 }`}
             >
@@ -246,26 +356,53 @@ Please analyze this error and fix the code to resolve it.`;
               Code
             </button>
           </div>
-
-          {/* Additional toolbar buttons */}
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-            <Maximize2 className="w-4 h-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-            <RefreshCw className="w-4 h-4" />
-          </Button>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="h-8 text-xs">
-            Share
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 text-xs">
-            Upgrade
-          </Button>
-          <Button size="sm" className="h-8 text-xs bg-primary hover:bg-primary/90">
-            Publish
-          </Button>
+          {project && (
+            <div className="flex items-center gap-2 px-2 py-1 bg-muted/30 rounded-full border border-border/50">
+              <Avatar className="h-6 w-6 border border-primary/20">
+                <AvatarFallback className="text-[10px] bg-primary/10 text-primary font-semibold">
+                  {(() => {
+                    const userInfo = getUserInfo();
+                    if (userInfo?.name) {
+                      return userInfo.name.charAt(0).toUpperCase();
+                    }
+                    return "U";
+                  })()}
+                </AvatarFallback>
+              </Avatar>
+              {project.role && (
+                <span className={cn(
+                  "text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded",
+                  project.role === 'OWNER' ? "bg-primary/10 text-primary" :
+                    project.role === 'EDITOR' ? "bg-amber-500/10 text-amber-600" :
+                      "bg-muted text-muted-foreground"
+                )}>
+                  {project.role}
+                </span>
+              )}
+            </div>
+          )}
+
+          <ShareDialog
+            projectId={projectId}
+            trigger={
+              <Button variant="outline" size="sm" className="h-8 text-xs font-medium" disabled={project?.role === 'VIEWER'}>
+                Share
+              </Button>
+            }
+          />
+          {project?.role !== 'VIEWER' && (
+            <>
+              <Button variant="outline" size="sm" className="h-8 text-xs">
+                Upgrade
+              </Button>
+              <Button size="sm" className="h-8 text-xs bg-primary hover:bg-primary/90">
+                Publish
+              </Button>
+            </>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -288,6 +425,7 @@ Please analyze this error and fix the code to resolve it.`;
                 onSendMessage={handleSendMessage}
                 isStreaming={isStreaming}
                 isLoading={isLoadingHistory}
+                readOnly={project?.role === 'VIEWER'}
               />
             </div>
           </ResizablePanel>
@@ -297,20 +435,45 @@ Please analyze this error and fix the code to resolve it.`;
           {/* Code/Preview Panel */}
           <ResizablePanel defaultSize={65} minSize={50} maxSize={75}>
             <div className="h-full">
-              {viewMode === "code" ? (
-                <CodePanel projectId={projectId} updatedFiles={updatedFiles} />
-              ) : (
-                <PreviewPanel
-                  projectId={projectId}
-                  runtimeError={runtimeError}
-                  onDismiss={() => setRuntimeError(null)}
-                  onFix={handleFixError}
-                />
-              )}
+              <div className="h-full relative">
+                <div className={cn("h-full absolute inset-0", viewMode !== "code" && "hidden")}>
+                  <CodePanel projectId={projectId} updatedFiles={updatedFiles} />
+                </div>
+                <div className={cn("h-full absolute inset-0", viewMode !== "preview" && "hidden")}>
+                  <PreviewPanel
+                    projectId={projectId}
+                    runtimeError={runtimeError}
+                    onDismiss={() => setRuntimeError(null)}
+                    onFix={handleFixError}
+                  />
+                </div>
+              </div>
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
-    </div>
+
+      {/* Rename Dialog */}
+      <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Project</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={renameName}
+              onChange={(e) => setRenameName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleRenameSubmit()}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleRenameSubmit} disabled={!renameName.trim() || renameName === project?.name}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div >
   );
 }

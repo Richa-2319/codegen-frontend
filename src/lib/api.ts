@@ -1,6 +1,9 @@
 import { ChatMessage, DeployResponse, FileNode, LoginCredentials, LoginResponse, ProjectSummaryResponse, ProjectRequest, ProjectResponse, ProjectMember, ProjectRole, SignupRequest, AuthResponse } from "./types";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://api.codegen.35.200.139.211.nip.io";
+const RAW_BASE = import.meta.env.VITE_API_URL || "http://api.codegen.35.200.139.211.nip.io";
+
+// Remove trailing "/api" if present and any trailing slashes
+const BASE_URL = RAW_BASE.replace(/\/api\/?$/, "").replace(/\/+$/, "");
 export const getAuthToken = () => localStorage.getItem("auth_token");
 
 export const setAuthToken = (token: string) => localStorage.setItem("auth_token", token);
@@ -110,6 +113,7 @@ export const api = {
   },
 
   async signup(data: SignupRequest): Promise<AuthResponse> {
+    // Endpoint explicitly updated to include /account
     const response = await fetch(`${BASE_URL}/api/v1/account/auth/signup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
